@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Logs (keep .gitkeep placeholder, ignore actual log files)
+logs/*.log
+logs/*.jsonl
+!logs/.gitkeep
+
+# Generated data outputs (reproducible — not source-controlled)
+data/staging/
+data/catalog/*.json
+data/profiles/*.json
+!data/**/.gitkeep
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Coverage / test output
+.coverage
+htmlcov/
+.pytest_cache/
+
+*plan*
+Raw_data*
+docs/implementation_tracker.md
