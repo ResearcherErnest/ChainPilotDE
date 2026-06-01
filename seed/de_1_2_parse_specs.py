@@ -28,14 +28,16 @@ from decimal import Decimal, InvalidOperation
 
 import openpyxl
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import json
+from datetime import datetime, timezone
+
+from config import LOADED_DIR, RAW_DATA_DIR, ROOT, TRACKER_PATH
+from etl.file_tracker import FileTracker
 from seed.db import get_connection
 from seed.seed_logger import SeedLogger
 
 SCRIPT_NAME = "de_1_2"
-WORKBOOK_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "Raw_data", "Stock management.xlsx"
-)
+WORKBOOK_PATH = str(RAW_DATA_DIR / "Stock management.xlsx")
 
 import re
 THICKNESS_RE = re.compile(r"^\d+\s*[Mm]{2}\s*$")
@@ -186,7 +188,7 @@ def process_tab(ws, tab_name: str, conn, logger: SeedLogger, retry_keys: set) ->
             print(f"           '{spec}'")
 
     # Parse the canonical spec (first non-null occurrence)
-    canonical_raw, canonical_row = spec_rows[0]
+    canonical_row, canonical_raw = spec_rows[0]
     parsed, parse_err = parse_spec(canonical_raw)
 
     if parse_err:
@@ -265,7 +267,7 @@ def main():
         print("FULL mode — processing all valid tabs\n")
 
     try:
-        wb = openpyxl.load_workbook(WORKBOOK_PATH, data_only=True)
+        wb = openpyxl.load_workbook(WORKBOOK_PATH, data_only=True, read_only=True)
     except Exception as exc:
         print(f"ERROR: Cannot open workbook: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -310,6 +312,22 @@ def main():
         from seed.seed_logger import FAILURES_LOG
         print(f"  Failure log      : {FAILURES_LOG}")
     print("=" * 52)
+
+    if not total_failed:
+        source_path = RAW_DATA_DIR / "Stock management.xlsx"
+        LOADED_DIR.mkdir(parents=True, exist_ok=True)
+        total_specs = sum(s["specs_parsed"] for s in all_stats)
+        manifest = {
+            "script": SCRIPT_NAME,
+            "source_file": str(source_path.relative_to(ROOT)),
+            "mode": "retry" if is_retry else "full",
+            "loaded_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {"tabs_processed": len(all_stats), "specs_parsed": total_specs, "failed": total_failed},
+        }
+        with open(LOADED_DIR / "stock_management_de_1_2.json", "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        FileTracker(TRACKER_PATH, ROOT).mark_loaded(source_path)
+        print(f"  Load manifest: {LOADED_DIR / 'stock_management_de_1_2.json'}")
 
     sys.exit(1 if total_failed else 0)
 
