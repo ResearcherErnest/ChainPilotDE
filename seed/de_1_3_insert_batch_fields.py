@@ -25,14 +25,16 @@ import sys
 
 import openpyxl
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import json
+from datetime import datetime, timezone
+
+from config import LOADED_DIR, RAW_DATA_DIR, ROOT, TRACKER_PATH
+from etl.file_tracker import FileTracker
 from seed.db import get_connection
 from seed.seed_logger import SeedLogger
 
 SCRIPT_NAME = "de_1_3"
-SUPPLIER_WORKBOOK = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "Raw_data", "Tree log suppliers Book.xlsx"
-)
+SUPPLIER_WORKBOOK = str(RAW_DATA_DIR / "Tree log suppliers Book.xlsx")
 SUPPLIER_SHEET = "Received tree logs trucks"
 
 # Canonical mapping: workbook column header → batch_field attributes.
@@ -249,7 +251,7 @@ def main():
         print("FULL mode — processing all materials\n")
 
     try:
-        wb = openpyxl.load_workbook(SUPPLIER_WORKBOOK, data_only=True)
+        wb = openpyxl.load_workbook(SUPPLIER_WORKBOOK, data_only=True, read_only=True)
     except Exception as exc:
         print(f"ERROR: Cannot open supplier workbook: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -308,6 +310,27 @@ def main():
         from seed.seed_logger import FAILURES_LOG
         print(f"  Failure log: {FAILURES_LOG}")
     print("=" * 60)
+
+    if not remaining:
+        source_path = RAW_DATA_DIR / "Tree log suppliers Book.xlsx"
+        LOADED_DIR.mkdir(parents=True, exist_ok=True)
+        total_inserted = sum(s["inserted"] for s in all_stats)
+        manifest = {
+            "script": SCRIPT_NAME,
+            "source_file": str(source_path.relative_to(ROOT)),
+            "mode": "retry" if is_retry else "full",
+            "loaded_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {
+                "materials_processed": len(all_stats),
+                "fields_inserted": total_inserted,
+                "conflicts": total_conflicts,
+                "failed": len(remaining),
+            },
+        }
+        with open(LOADED_DIR / "tree_log_suppliers_de_1_3.json", "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        FileTracker(TRACKER_PATH, ROOT).mark_loaded(source_path)
+        print(f"  Load manifest: {LOADED_DIR / 'tree_log_suppliers_de_1_3.json'}")
 
     sys.exit(1 if remaining else 0)
 
