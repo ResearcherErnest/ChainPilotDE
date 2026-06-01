@@ -1,7 +1,8 @@
 # ChainPilot — Source-to-Target Data Mapping
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Prepared:** 2026-05-29  
+**Updated:** 2026-06-01  
 **Scope:** Stock Management, GLUE RECORD-1, Tree Log Suppliers Book  
 
 ---
@@ -108,13 +109,39 @@ Each column maps to a `batch_field` record inserted against **every** board mate
 
 ---
 
-## 5. GLUE RECORD-1 → (future scope)
+## 5. GLUE RECORD-1 → `inventory_item` + `item_property` (DE-1.5, DE-1.6)
 
-| Source | Sheet | Status |
-|--------|-------|--------|
-| `GLUE RECORD-1.xlsx` | GLUE A , B, C and D | **Out of scope for DE-1.x seed scripts.** Cataloged and profiled (DE-3/DE-4). Target mapping TBD. |
+Sheet: `GLUE A , B, C and D`
 
-The glue record follows the same INPUT/OUTPUT/balance structure as the stock management tabs. When in scope, `Items='glue'` would produce `display_name='glue MDF'` (requires naming convention alignment with product team).
+The sheet follows the same INPUT/OUTPUT/balance structure as the stock management tabs
+with a header row at row 2 (Date, Items, Specifications, quantity, ...).
+
+### 5.1 Material → `inventory_item` (DE-1.5)
+
+| Source | Source Field | Target Table | Target Column | Transformation |
+|--------|-------------|--------------|---------------|----------------|
+| Items column, first data row | `"glue"` | `inventory_item` | `display_name` | `title()` → `"Glue"` |
+| Hardcoded | — | `inventory_item` | `category` | `"Raw Material"` |
+| config.SOURCES entry | `base_uom` | `inventory_item` | `base_uom` | `"bags"` |
+
+DE-1.5 is **config-driven**: it loops over all sources with `seed_type="glue_ledger"`
+in `config.py`. Adding a new adhesive workbook requires only a new `SOURCES` entry —
+no script changes.
+
+### 5.2 Specifications → `item_property` (DE-1.6)
+
+Spec format: `"<weight>kg/<count>bag"` (e.g. `"25kg/1bag"`)
+
+| Source | Source Field | Target Table | Target Column | Transformation |
+|--------|-------------|--------------|---------------|----------------|
+| Specifications column, first data row | `"25kg/1bag"` | `item_property` | `property_name = 'weight_per_bag_kg'` | regex → Decimal(`25`) |
+| Specifications column, first data row | `"25kg/1bag"` | `item_property` | `property_name = 'bags_per_unit'` | regex → Decimal(`1`) |
+
+**Current values:**
+
+| Material | Spec | `weight_per_bag_kg` | `bags_per_unit` |
+|----------|------|---------------------|-----------------|
+| Glue | `25kg/1bag` | 25.0 | 1.0 |
 
 ---
 
