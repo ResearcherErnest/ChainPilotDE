@@ -30,10 +30,10 @@ import json
 import os
 from datetime import datetime, timezone
 
-_ROOT = os.path.dirname(os.path.dirname(__file__))
-LOGS_DIR = os.path.join(_ROOT, "logs")
-FAILURES_LOG = os.path.join(LOGS_DIR, "seed_failures.log")
-AUDIT_LOG = os.path.join(LOGS_DIR, "seed_audit.log")
+from config import LOGS_DIR
+
+FAILURES_LOG = str(LOGS_DIR / "seed_failures.log")
+AUDIT_LOG    = str(LOGS_DIR / "seed_audit.log")
 
 
 def _now() -> str:
