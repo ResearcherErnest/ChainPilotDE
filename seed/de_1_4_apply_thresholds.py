@@ -23,8 +23,9 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from config import LOADED_DIR
 from seed.db import get_connection
 from seed.seed_logger import SeedLogger
 
@@ -174,7 +175,7 @@ def main():
             logger.log_audit(display_name, current_threshold, new_threshold, "update")
             print(
                 f"  UPDATE[{display_name}] "
-                f"{current_threshold!r} → {new_threshold}"
+                f"{current_threshold!r} -> {new_threshold}"
             )
             succeeded += 1
         except Exception as exc:
@@ -198,6 +199,19 @@ def main():
         from seed.seed_logger import FAILURES_LOG
         print(f"  Failure log: {FAILURES_LOG}")
     print("=" * 52)
+
+    if not failed and not blocked:
+        LOADED_DIR.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "script": SCRIPT_NAME,
+            "config_file": os.path.relpath(THRESHOLDS_FILE),
+            "mode": "retry" if is_retry else "full",
+            "loaded_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {"updated": succeeded, "skipped": skipped, "blocked": blocked, "failed": failed},
+        }
+        with open(LOADED_DIR / "thresholds_de_1_4.json", "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        print(f"  Load manifest: {LOADED_DIR / 'thresholds_de_1_4.json'}")
 
     sys.exit(1 if (failed or blocked) else 0)
 
