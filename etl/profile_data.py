@@ -7,30 +7,24 @@ For each sheet, reports:
   - Detected column types
   - Schema inconsistencies (e.g., mixed types in a column)
 
-Output is written to data/profiles/data_quality_report.json and
-a human-readable summary is printed to stdout.
+Unchanged files are skipped automatically — only new or changed files
+are re-profiled. Output is written to data/profiles/data_quality_report.json
+and a human-readable summary is printed to stdout.
 
 Usage:
-    python -m etl.profile_data
+    python -m etl.profile_data             # skip unchanged files
+    python -m etl.profile_data --force     # re-profile all files
 """
 
 import json
-import os
-from collections import Counter, defaultdict
-from datetime import datetime
+import sys
+from collections import Counter
+from datetime import datetime, timezone
 
 import openpyxl
 
-_ROOT = os.path.dirname(os.path.dirname(__file__))
-RAW_DATA_DIR = os.path.join(_ROOT, "Raw_data")
-PROFILES_DIR = os.path.join(_ROOT, "data", "profiles")
-REPORT_PATH = os.path.join(PROFILES_DIR, "data_quality_report.json")
-
-SOURCES = [
-    ("Stock management.xlsx", "stock_management"),
-    ("GLUE RECORD-1.xlsx", "glue_record"),
-    ("Tree log suppliers Book.xlsx", "tree_log_suppliers"),
-]
+from config import PROCESSED_DIR, PROFILES_DIR, RAW_DATA_DIR, REPORT_PATH, ROOT, SOURCES, TRACKER_PATH
+from etl.file_tracker import FileTracker
 
 
 def detect_type(value) -> str:
@@ -54,8 +48,7 @@ def detect_type(value) -> str:
 def find_header_row(rows: list) -> int:
     """Return 0-based index of the first row with >= 2 non-None cells."""
     for i, row in enumerate(rows):
-        non_null = [c for c in row if c is not None]
-        if len(non_null) >= 2:
+        if len([c for c in row if c is not None]) >= 2:
             return i
     return 0
 
@@ -75,7 +68,6 @@ def profile_sheet(ws) -> dict:
     total_data = len(data_rows)
     non_empty_data = sum(1 for r in data_rows if any(c is not None for c in r))
 
-    # Per-column stats
     columns = []
     for col_idx, col_name in enumerate(header):
         values = [r[col_idx] if col_idx < len(r) else None for r in data_rows]
@@ -83,7 +75,6 @@ def profile_sheet(ws) -> dict:
         null_count = len(values) - len(non_null_values)
         type_counts = Counter(detect_type(v) for v in non_null_values)
         formula_count = type_counts.pop("formula", 0)
-
         inconsistent = len(type_counts) > 1
 
         columns.append({
@@ -97,7 +88,6 @@ def profile_sheet(ws) -> dict:
             "type_inconsistent": inconsistent,
         })
 
-    # Duplicate detection (stringify each row for comparison)
     row_strings = [str(r) for r in data_rows if any(c is not None for c in r)]
     dup_counts = Counter(row_strings)
     duplicate_row_count = sum(v - 1 for v in dup_counts.values() if v > 1)
@@ -126,12 +116,12 @@ def profile_sheet(ws) -> dict:
 
 
 def profile_file(filename: str, source_id: str) -> dict:
-    path = os.path.join(RAW_DATA_DIR, filename)
-    if not os.path.exists(path):
+    path = RAW_DATA_DIR / filename
+    if not path.exists():
         return {"source_id": source_id, "filename": filename, "error": "file not found", "sheets": []}
 
     try:
-        wb = openpyxl.load_workbook(path, data_only=True)
+        wb = openpyxl.load_workbook(str(path), data_only=True)
     except Exception as exc:
         return {"source_id": source_id, "filename": filename, "error": str(exc), "sheets": []}
 
@@ -153,6 +143,15 @@ def profile_file(filename: str, source_id: str) -> dict:
     }
 
 
+def load_existing_report() -> dict:
+    """Load existing report entries keyed by source_id (for merging skipped files)."""
+    if not REPORT_PATH.exists():
+        return {}
+    with open(REPORT_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    return {s["source_id"]: s for s in data.get("sources", [])}
+
+
 def print_summary(report: dict):
     print("\n" + "=" * 60)
     print("DATA QUALITY REPORT SUMMARY")
@@ -172,25 +171,54 @@ def print_summary(report: dict):
 
 
 def main():
-    os.makedirs(PROFILES_DIR, exist_ok=True)
+    force = "--force" in sys.argv
+    tracker = FileTracker(TRACKER_PATH, ROOT)
+    existing = load_existing_report()
+
+    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
     report = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": [],
     }
 
-    for filename, source_id in SOURCES:
+    skipped = profiled = 0
+    for source in SOURCES:
+        filename, source_id = source["filename"], source["source_id"]
+        filepath = RAW_DATA_DIR / filename
+
+        if not force and not tracker.needs_processing(filepath):
+            entry = existing.get(source_id)
+            if entry:
+                report["sources"].append(entry)
+                status = tracker.get_status(filepath)
+                print(f"Skipping  {filename} — unchanged (status: {status})")
+                skipped += 1
+                continue
+
         print(f"Profiling {filename} ...", end=" ", flush=True)
         result = profile_file(filename, source_id)
         report["sources"].append(result)
         issues = result.get("total_issues", "?")
         print(f"done ({issues} issue(s))")
 
+        if "error" not in result:
+            # Write individual processed profile
+            out = PROCESSED_DIR / f"{source_id}_profile.json"
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2, default=str)
+            # Only advance to processed if not already loaded
+            if tracker.get_status(filepath) != "loaded":
+                tracker.mark_processed(filepath, source_id=source_id)
+        profiled += 1
+
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, default=str)
 
     print_summary(report)
     print(f"\nFull report written to {REPORT_PATH}")
+    print(f"  Profiled: {profiled}  |  Skipped (unchanged): {skipped}")
 
 
 if __name__ == "__main__":
