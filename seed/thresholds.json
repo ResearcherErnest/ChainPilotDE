@@ -1,0 +1,8 @@
+{
+  "_comment": "Reorder thresholds by display_name. Version-controlled — edit here, never hardcode.",
+  "thresholds": {
+    "9mm MDF":  500,
+    "6mm MDF":  300,
+    "12mm MDF": 200
+  }
+}
