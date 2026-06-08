@@ -47,6 +47,11 @@ DATABASE_URL = (
     or f"postgresql://{_DB_USER}:{_DB_PASSWORD}@{_DB_HOST}:{_DB_PORT}/{_DB_NAME}"
 )
 
+# ── Backend API ───────────────────────────────────────────────────────
+# Base URL for the ChainPilot backend REST API (no trailing slash).
+# Used by de_2_1 and future API-based seed scripts.
+API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")
+
 # ── Source file registry ──────────────────────────────────────────────
 # To add a new source file, append one entry here — no script changes needed.
 #
