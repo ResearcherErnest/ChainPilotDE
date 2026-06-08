@@ -104,6 +104,54 @@ class SeedLogger:
     # Audit log (append-only)                                             #
     # ------------------------------------------------------------------ #
 
+    def log_run_start(self, description: str, mode: str = "full") -> None:
+        """Write a RUN_START header to seed_audit.log at the top of every script run."""
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        entry = {
+            "type":        "RUN_START",
+            "ts":          _now(),
+            "script":      self.script,
+            "description": description,
+            "mode":        mode,
+        }
+        with open(AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    def log_run_end(self, result: str, summary: str = "") -> None:
+        """Write a RUN_END footer to seed_audit.log after every script run."""
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        entry = {
+            "type":    "RUN_END",
+            "ts":      _now(),
+            "script":  self.script,
+            "result":  result,
+            "summary": summary,
+        }
+        with open(AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    def log_event(self, action: str, entity: str, detail: str = "") -> None:
+        """
+        Append one structured event to seed_audit.log.
+
+        Fields:
+            ts      — ISO-8601 UTC timestamp
+            script  — script name (e.g. 'de_2_2')
+            action  — INSERT | SKIP | CREATE | FAIL | UPDATE
+            entity  — '<table>:<key>'  e.g. 'inventory_item:RM-MDF-9MM'
+            detail  — human-readable context (name, row count, error text)
+        """
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        entry = {
+            "ts":     _now(),
+            "script": self.script,
+            "action": action,
+            "entity": entity,
+            "detail": detail,
+        }
+        with open(AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
     def log_audit(
         self,
         material: str,
@@ -112,7 +160,7 @@ class SeedLogger:
         action: str,
         field: str = "reorder_threshold",
     ) -> None:
-        """Append one audit event to seed_audit.log."""
+        """Legacy audit method used by de_1_4. Kept for backward compatibility."""
         os.makedirs(LOGS_DIR, exist_ok=True)
         entry = {
             "script": self.script,
